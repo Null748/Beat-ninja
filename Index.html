@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Beat Ninja</title>
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    font-family:sans-serif;
+    color:white;
+    background: radial-gradient(circle at top, #3a3a3a, #121212);
+}
+
+canvas{ display:block; }
+
+/* UI (game only) */
+#ui{
+    position:absolute;
+    top:10px;
+    left:10px;
+    font-size:22px;
+    display:none; /* hidden until game starts */
+}
+
+/* SCREENS */
+.screen{
+    position:absolute;
+    width:100%;
+    height:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    gap:15px;
+    background:black;
+}
+
+.hidden{ display:none; }
+
+button{
+    padding:14px 22px;
+    font-size:18px;
+    cursor:pointer;
+    border:none;
+    border-radius:10px;
+}
+
+/* TITLE STYLE */
+.title{
+    text-align:center;
+    margin-bottom:10px;
+}
+
+.subtitle{
+    font-size:16px;
+    opacity:0.6;
+}
+
+/* GAME OVER */
+#gameOverScreen{
+    background:rgba(0,0,0,0.85);
+}
+
+#finalScore{
+    font-size:90px;
+    opacity:0;
+    transform:scale(0.4);
+    transition:all 0.8s ease;
+    margin-bottom:20px;
+}
+</style>
+</head>
+<body>
+
+<!-- 📱 / 💻 DEVICE -->
+<div id="deviceScreen" class="screen">
+    <h1>Choose Device</h1>
+    <button onclick="chooseDevice('pc')">💻 Computer</button>
+    <button onclick="chooseDevice('mobile')">📱 Mobile</button>
+</div>
+
+<!-- 🏠 MENU -->
+<div id="menu" class="screen hidden">
+    <div class="title">
+        <h1>Beat Ninja</h1>
+        <div class="subtitle">made by null</div>
+    </div>
+
+    <button onclick="startGame('easy')">Easy</button>
+    <button onclick="startGame('medium')">Medium</button>
+    <button onclick="startGame('hard')">Hard</button>
+</div>
+
+<!-- 🎮 GAME UI (hidden on menu) -->
+<div id="ui">
+Score: <span id="score">0</span>
+&nbsp;&nbsp; Lives: <span id="lives">❤️❤️❤️</span>
+</div>
+
+<!-- 💀 GAME OVER -->
+<div id="gameOverScreen" class="screen hidden">
+    <div id="finalScore">0</div>
+    <button onclick="backToMenu()">Home</button>
+    <button onclick="restart()">Play Again</button>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+function resize(){
+    canvas.width = innerWidth;
+    canvas.height = innerHeight;
+}
+resize();
+window.addEventListener("resize", resize);
+
+/* STATE */
+let device = "pc";
+
+let score = 0;
+let lives = 3;
+let gameOver = false;
+
+let spawnRate = 700;
+let spawnInterval;
+let bombInterval;
+
+let blocks = [];
+let bombs = [];
+let trail = [];
+
+const ui = document.getElementById("ui");
+const scoreEl = document.getElementById("score");
+const livesEl = document.getElementById("lives");
+
+const deviceScreen = document.getElementById("deviceScreen");
+const menu = document.getElementById("menu");
+const gameOverScreen = document.getElementById("gameOverScreen");
+const finalScore = document.getElementById("finalScore");
+
+/* DEVICE */
+function chooseDevice(type){
+    device = type;
+
+    deviceScreen.classList.add("hidden");
+    menu.classList.remove("hidden");
+}
+
+/* MODE */
+function setMode(m){
+    if(m === "easy") spawnRate = 900;
+    if(m === "medium") spawnRate = 600;
+    if(m === "hard") spawnRate = 400;
+}
+
+/* 🟧 BLOCK */
+class Block{
+    constructor(){
+        this.size = 50;
+        this.x = Math.random() * canvas.width;
+        this.y = canvas.height + 60;
+
+        let targetX = canvas.width/2 + (Math.random()-0.5)*canvas.width*0.6;
+
+        this.vx = (targetX - this.x)/45;
+        this.vy = -(10 + Math.random()*5);
+
+        this.gravity = 0.28;
+
+        this.color = `hsl(${Math.random()*360},80%,60%)`;
+        this.hit = false;
+    }
+
+    update(){
+        this.vy += this.gravity;
+        this.x += this.vx;
+        this.y += this.vy;
+    }
+
+    draw(){
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x,this.y,this.size,this.size);
+    }
+}
+
+/* 💣 BOMB */
+class Bomb{
+    constructor(){
+        this.r = 25;
+        this.x = Math.random() * canvas.width;
+        this.y = canvas.height + 60;
+
+        let targetX = canvas.width/2 + (Math.random()-0.5)*canvas.width*0.6;
+
+        this.vx = (targetX - this.x)/50;
+        this.vy = -(9 + Math.random()*4);
+
+        this.gravity = 0.28;
+    }
+
+    update(){
+        this.vy += this.gravity;
+        this.x += this.vx;
+        this.y += this.vy;
+    }
+
+    draw(){
+        ctx.beginPath();
+        ctx.arc(this.x,this.y,this.r+4,0,Math.PI*2);
+        ctx.fillStyle="rgba(255,255,255,0.12)";
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
+        ctx.fillStyle="black";
+        ctx.fill();
+
+        ctx.strokeStyle="white";
+        ctx.lineWidth=3;
+        ctx.stroke();
+    }
+}
+
+/* START */
+function startGame(mode){
+    setMode(mode);
+
+    score = 0;
+    lives = 3;
+    blocks = [];
+    bombs = [];
+    trail = [];
+    gameOver = false;
+
+    updateUI();
+
+    menu.classList.add("hidden");
+    gameOverScreen.classList.add("hidden");
+
+    ui.style.display = "block"; // 🎮 show UI ONLY in game
+
+    clearInterval(spawnInterval);
+    clearInterval(bombInterval);
+
+    spawnBlocks();
+    spawnBombs();
+
+    requestAnimationFrame(loop);
+}
+
+/* SPAWNS */
+function spawnBlocks(){
+    spawnInterval = setInterval(()=>{
+        if(!gameOver) blocks.push(new Block());
+    }, spawnRate);
+}
+
+function spawnBombs(){
+    bombInterval = setInterval(()=>{
+        if(!gameOver) bombs.push(new Bomb());
+    }, 5000);
+}
+
+/* UI */
+function updateUI(){
+    scoreEl.textContent = score;
+    livesEl.textContent = "❤️".repeat(lives);
+}
+
+/* INPUT */
+function addPoint(x,y){
+    trail.push({x,y});
+    if(trail.length > 12) trail.shift();
+}
+
+canvas.addEventListener("mousemove", e=>{
+    if(device !== "pc" || gameOver) return;
+    addPoint(e.clientX,e.clientY);
+});
+
+canvas.addEventListener("touchmove", e=>{
+    if(device !== "mobile" || gameOver) return;
+    let t = e.touches[0];
+    addPoint(t.clientX,t.clientY);
+});
+
+/* HIT CHECK */
+function handleHits(){
+    blocks = blocks.filter(b=>{
+        for(let p of trail){
+            if(
+                p.x>b.x && p.x<b.x+b.size &&
+                p.y>b.y && p.y<b.y+b.size
+            ){
+                score++;
+                updateUI();
+                return false;
+            }
+        }
+        return true;
+    });
+
+    for(let i=0;i<bombs.length;i++){
+        let b = bombs[i];
+
+        for(let p of trail){
+            let dx=p.x-b.x, dy=p.y-b.y;
+            if(Math.sqrt(dx*dx+dy*dy)<b.r){
+                score=0;
+                updateUI();
+                bombs.splice(i,1);
+                i--;
+                break;
+            }
+        }
+    }
+}
+
+/* TRAIL */
+function drawTrail(){
+    if(trail.length<2) return;
+
+    ctx.strokeStyle="white";
+    ctx.lineWidth=4;
+    ctx.beginPath();
+    ctx.moveTo(trail[0].x,trail[0].y);
+    for(let p of trail) ctx.lineTo(p.x,p.y);
+    ctx.stroke();
+}
+
+/* GAME OVER */
+function endGame(){
+    gameOver = true;
+
+    clearInterval(spawnInterval);
+    clearInterval(bombInterval);
+
+    ui.style.display = "none"; // 🧼 hide UI on game over
+
+    gameOverScreen.classList.remove("hidden");
+
+    setTimeout(()=>{
+        finalScore.textContent = "Score: " + score;
+        finalScore.style.opacity="1";
+        finalScore.style.transform="scale(1)";
+    },200);
+}
+
+/* LOOP */
+function loop(){
+    if(gameOver) return;
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    blocks.forEach(b=>{
+        b.update();
+        b.draw();
+
+        if(
+            b.y>canvas.height+150 ||
+            b.x<-150 || b.x>canvas.width+150
+        ){
+            b.hit=true;
+            lives--;
+            updateUI();
+        }
+    });
+
+    blocks = blocks.filter(b=>!b.hit);
+
+    bombs.forEach(b=>{
+        b.update();
+        b.draw();
+    });
+
+    bombs = bombs.filter(b=>b.y<canvas.height+200);
+
+    handleHits();
+    drawTrail();
+
+    if(lives<=0){
+        endGame();
+        return;
+    }
+
+    requestAnimationFrame(loop);
+}
+
+/* NAV */
+function restart(){
+    startGame("easy");
+}
+
+function backToMenu(){
+    menu.classList.remove("hidden");
+    gameOverScreen.classList.add("hidden");
+    ui.style.display = "none";
+    gameOver=true;
+
+    clearInterval(spawnInterval);
+    clearInterval(bombInterval);
+}
+</script>
+
+</body>
+</html>
