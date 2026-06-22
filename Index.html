@@ -14,16 +14,14 @@ body{
 
 canvas{ display:block; }
 
-/* UI (game only) */
 #ui{
     position:absolute;
     top:10px;
     left:10px;
     font-size:22px;
-    display:none; /* hidden until game starts */
+    display:none;
 }
 
-/* SCREENS */
 .screen{
     position:absolute;
     width:100%;
@@ -46,18 +44,6 @@ button{
     border-radius:10px;
 }
 
-/* TITLE STYLE */
-.title{
-    text-align:center;
-    margin-bottom:10px;
-}
-
-.subtitle{
-    font-size:16px;
-    opacity:0.6;
-}
-
-/* GAME OVER */
 #gameOverScreen{
     background:rgba(0,0,0,0.85);
 }
@@ -69,36 +55,44 @@ button{
     transition:all 0.8s ease;
     margin-bottom:20px;
 }
+
+#mobileScreen{
+    background:black;
+}
 </style>
 </head>
 <body>
 
-<!-- 📱 / 💻 DEVICE -->
+<!-- DEVICE -->
 <div id="deviceScreen" class="screen">
     <h1>Choose Device</h1>
     <button onclick="chooseDevice('pc')">💻 Computer</button>
-    <button onclick="chooseDevice('mobile')">📱 Mobile</button>
+    <button onclick="showMobileOptions()">📱 Mobile</button>
 </div>
 
-<!-- 🏠 MENU -->
-<div id="menu" class="screen hidden">
-    <div class="title">
-        <h1>Beat Ninja</h1>
-        <div class="subtitle">made by null</div>
-    </div>
+<!-- MOBILE MODE -->
+<div id="mobileScreen" class="screen hidden">
+    <h1>Mobile Mode</h1>
+    <button onclick="chooseMobileMode('solo')">🎮 Single Player</button>
+    <button onclick="chooseMobileMode('coop')">🤝 Co-op (2 Players)</button>
+</div>
 
+<!-- MENU -->
+<div id="menu" class="screen hidden">
+    <h1>Beat Ninja</h1>
+    <div>made by null</div>
     <button onclick="startGame('easy')">Easy</button>
     <button onclick="startGame('medium')">Medium</button>
     <button onclick="startGame('hard')">Hard</button>
 </div>
 
-<!-- 🎮 GAME UI (hidden on menu) -->
+<!-- UI -->
 <div id="ui">
 Score: <span id="score">0</span>
 &nbsp;&nbsp; Lives: <span id="lives">❤️❤️❤️</span>
 </div>
 
-<!-- 💀 GAME OVER -->
+<!-- GAME OVER -->
 <div id="gameOverScreen" class="screen hidden">
     <div id="finalScore">0</div>
     <button onclick="backToMenu()">Home</button>
@@ -120,6 +114,7 @@ window.addEventListener("resize", resize);
 
 /* STATE */
 let device = "pc";
+let modeType = "solo";
 
 let score = 0;
 let lives = 3;
@@ -131,22 +126,38 @@ let bombInterval;
 
 let blocks = [];
 let bombs = [];
-let trail = [];
 
+let trailP1 = [];
+let trailP2 = [];
+
+/* UI */
 const ui = document.getElementById("ui");
 const scoreEl = document.getElementById("score");
 const livesEl = document.getElementById("lives");
 
 const deviceScreen = document.getElementById("deviceScreen");
+const mobileScreen = document.getElementById("mobileScreen");
 const menu = document.getElementById("menu");
 const gameOverScreen = document.getElementById("gameOverScreen");
 const finalScore = document.getElementById("finalScore");
 
-/* DEVICE */
+/* DEVICE FLOW */
 function chooseDevice(type){
     device = type;
-
     deviceScreen.classList.add("hidden");
+    menu.classList.remove("hidden");
+}
+
+function showMobileOptions(){
+    deviceScreen.classList.add("hidden");
+    mobileScreen.classList.remove("hidden");
+}
+
+function chooseMobileMode(mode){
+    device = "mobile";
+    modeType = mode;
+
+    mobileScreen.classList.add("hidden");
     menu.classList.remove("hidden");
 }
 
@@ -157,7 +168,7 @@ function setMode(m){
     if(m === "hard") spawnRate = 400;
 }
 
-/* 🟧 BLOCK */
+/* BLOCK */
 class Block{
     constructor(){
         this.size = 50;
@@ -187,7 +198,7 @@ class Block{
     }
 }
 
-/* 💣 BOMB */
+/* BOMB */
 class Bomb{
     constructor(){
         this.r = 25;
@@ -229,19 +240,20 @@ class Bomb{
 function startGame(mode){
     setMode(mode);
 
-    score = 0;
-    lives = 3;
-    blocks = [];
-    bombs = [];
-    trail = [];
-    gameOver = false;
+    score=0;
+    lives=3;
+    blocks=[];
+    bombs=[];
+    trailP1=[];
+    trailP2=[];
+    gameOver=false;
 
     updateUI();
 
     menu.classList.add("hidden");
     gameOverScreen.classList.add("hidden");
 
-    ui.style.display = "block"; // 🎮 show UI ONLY in game
+    ui.style.display="block";
 
     clearInterval(spawnInterval);
     clearInterval(bombInterval);
@@ -254,61 +266,86 @@ function startGame(mode){
 
 /* SPAWNS */
 function spawnBlocks(){
-    spawnInterval = setInterval(()=>{
+    spawnInterval=setInterval(()=>{
         if(!gameOver) blocks.push(new Block());
-    }, spawnRate);
+    },spawnRate);
 }
 
 function spawnBombs(){
-    bombInterval = setInterval(()=>{
+    bombInterval=setInterval(()=>{
         if(!gameOver) bombs.push(new Bomb());
-    }, 5000);
+    },5000);
 }
 
 /* UI */
 function updateUI(){
-    scoreEl.textContent = score;
-    livesEl.textContent = "❤️".repeat(lives);
+    scoreEl.textContent=score;
+    livesEl.textContent="❤️".repeat(lives);
 }
 
 /* INPUT */
-function addPoint(x,y){
-    trail.push({x,y});
-    if(trail.length > 12) trail.shift();
+function addPoint(x,y,isP2){
+    if(isP2){
+        trailP2.push({x,y});
+        if(trailP2.length>12) trailP2.shift();
+    } else {
+        trailP1.push({x,y});
+        if(trailP1.length>12) trailP1.shift();
+    }
 }
 
-canvas.addEventListener("mousemove", e=>{
-    if(device !== "pc" || gameOver) return;
-    addPoint(e.clientX,e.clientY);
+/* PC */
+canvas.addEventListener("mousemove",e=>{
+    if(device!=="pc"||gameOver) return;
+    addPoint(e.clientX,e.clientY,false);
 });
 
-canvas.addEventListener("touchmove", e=>{
-    if(device !== "mobile" || gameOver) return;
-    let t = e.touches[0];
-    addPoint(t.clientX,t.clientY);
+/* MOBILE */
+canvas.addEventListener("touchmove",e=>{
+    if(device!=="mobile"||gameOver) return;
+
+    let t=e.touches[0];
+
+    if(modeType==="coop"){
+        if(t.clientX < canvas.width/2){
+            addPoint(t.clientX,t.clientY,false);
+        } else {
+            addPoint(t.clientX,t.clientY,true);
+        }
+    } else {
+        addPoint(t.clientX,t.clientY,false);
+    }
 });
 
-/* HIT CHECK */
+/* HIT */
 function handleHits(){
+
     blocks = blocks.filter(b=>{
-        for(let p of trail){
-            if(
-                p.x>b.x && p.x<b.x+b.size &&
-                p.y>b.y && p.y<b.y+b.size
-            ){
+
+        for(let p of trailP1){
+            if(p.x>b.x&&p.x<b.x+b.size&&p.y>b.y&&p.y<b.y+b.size){
                 score++;
                 updateUI();
                 return false;
             }
         }
+
+        for(let p of trailP2){
+            if(p.x>b.x&&p.x<b.x+b.size&&p.y>b.y&&p.y<b.y+b.size){
+                score++;
+                updateUI();
+                return false;
+            }
+        }
+
         return true;
     });
 
     for(let i=0;i<bombs.length;i++){
-        let b = bombs[i];
+        let b=bombs[i];
 
-        for(let p of trail){
-            let dx=p.x-b.x, dy=p.y-b.y;
+        for(let p of trailP1.concat(trailP2)){
+            let dx=p.x-b.x,dy=p.y-b.y;
             if(Math.sqrt(dx*dx+dy*dy)<b.r){
                 score=0;
                 updateUI();
@@ -320,31 +357,44 @@ function handleHits(){
     }
 }
 
-/* TRAIL */
+/* TRAILS */
 function drawTrail(){
-    if(trail.length<2) return;
 
-    ctx.strokeStyle="white";
-    ctx.lineWidth=4;
-    ctx.beginPath();
-    ctx.moveTo(trail[0].x,trail[0].y);
-    for(let p of trail) ctx.lineTo(p.x,p.y);
-    ctx.stroke();
+    if(trailP1.length>1){
+        ctx.strokeStyle="cyan";
+        ctx.lineWidth=4;
+        ctx.beginPath();
+        ctx.moveTo(trailP1[0].x,trailP1[0].y);
+        trailP1.forEach(p=>ctx.lineTo(p.x,p.y));
+        ctx.stroke();
+    }
+
+    if(trailP2.length>1){
+        ctx.strokeStyle="red";
+        ctx.lineWidth=4;
+        ctx.beginPath();
+        ctx.moveTo(trailP2[0].x,trailP2[0].y);
+        trailP2.forEach(p=>ctx.lineTo(p.x,p.y));
+        ctx.stroke();
+    }
+
+    if(device==="mobile" && modeType==="coop"){
+        ctx.fillStyle="rgba(255,255,255,0.1)";
+        ctx.fillRect(canvas.width/2-1,0,2,canvas.height);
+    }
 }
 
 /* GAME OVER */
 function endGame(){
-    gameOver = true;
-
+    gameOver=true;
     clearInterval(spawnInterval);
     clearInterval(bombInterval);
 
-    ui.style.display = "none"; // 🧼 hide UI on game over
-
+    ui.style.display="none";
     gameOverScreen.classList.remove("hidden");
 
     setTimeout(()=>{
-        finalScore.textContent = "Score: " + score;
+        finalScore.textContent="Score: "+score;
         finalScore.style.opacity="1";
         finalScore.style.transform="scale(1)";
     },200);
@@ -352,32 +402,22 @@ function endGame(){
 
 /* LOOP */
 function loop(){
-    if(gameOver) return;
-
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
     blocks.forEach(b=>{
-        b.update();
-        b.draw();
+        b.update(); b.draw();
 
-        if(
-            b.y>canvas.height+150 ||
-            b.x<-150 || b.x>canvas.width+150
-        ){
+        if(b.y>canvas.height+150||b.x<-150||b.x>canvas.width+150){
             b.hit=true;
             lives--;
             updateUI();
         }
     });
 
-    blocks = blocks.filter(b=>!b.hit);
+    blocks=blocks.filter(b=>!b.hit);
 
-    bombs.forEach(b=>{
-        b.update();
-        b.draw();
-    });
-
-    bombs = bombs.filter(b=>b.y<canvas.height+200);
+    bombs.forEach(b=>{b.update();b.draw();});
+    bombs=bombs.filter(b=>b.y<canvas.height+200);
 
     handleHits();
     drawTrail();
@@ -391,14 +431,12 @@ function loop(){
 }
 
 /* NAV */
-function restart(){
-    startGame("easy");
-}
+function restart(){startGame("easy");}
 
 function backToMenu(){
     menu.classList.remove("hidden");
     gameOverScreen.classList.add("hidden");
-    ui.style.display = "none";
+    ui.style.display="none";
     gameOver=true;
 
     clearInterval(spawnInterval);
